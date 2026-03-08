@@ -161,7 +161,7 @@ function dibujarArquero(x, y, saltando) {
 
 function dibujarBalon(x, y) {
   // Sombra
-  const esc = (y - 100) / 300;
+  const esc = Math.max(0, (y - 100) / 300);
   ctx.fillStyle = `rgba(0,60,0,${0.3 * esc})`;
   ctx.beginPath(); ctx.ellipse(x, SUELO + 4, 15 * esc, 5 * esc, 0, 0, Math.PI * 2); ctx.fill();
 
@@ -232,9 +232,9 @@ function loop() {
       }
 
     } else {
-      // Por arriba: sube muy alto, pasa por encima del travesaño (AY1=110)
-      bx = PX + direccion * 100 * prog;
-      by = PY - 420 * Math.sin(Math.PI * prog * 0.6);
+      // Por arriba: sube y sale del canvas sin volver
+      bx = PX + direccion * 80 * prog;
+      by = PY - 560 * prog;
     }
 
     axArq = 400 + (-direccion) * 120 * prog;
@@ -242,13 +242,14 @@ function loop() {
 
     dibujarArquero(Math.round(axArq), Math.round(ayArq), true);
     dibujarJugador(PX, 425, false, true);
-    dibujarBalon(bx, by);
+    if (by > -14) dibujarBalon(bx, by);
 
     if (prog >= 1) { fase = 'resultado'; t = 0; contador++; }
 
   } else if (fase === 'resultado') {
     dibujarJugador(PX, 425, false, true);
     dibujarArquero(Math.round(axArq), Math.round(ayArq), true);
+    dibujarBalon(bx, by);
 
     const txt  = MENSAJES[tipoFallo];
     const pulso = 54 + Math.sin(t * 0.15) * 6;
@@ -263,7 +264,7 @@ function loop() {
 
     document.getElementById('contador').textContent = `Penales fallados: ${contador}`;
 
-    if (t > 95) { fase = 'patear'; t = 0; }
+    if (t > 70) { fase = 'patear'; t = 0; bx = PX; by = PY; }
   }
 
   requestAnimationFrame(loop);
