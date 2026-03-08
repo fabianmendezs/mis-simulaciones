@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Penal - Solo Fallos</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #111;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    h1 { color: #fff; margin-bottom: 12px; font-size: 1.2rem; letter-spacing: 2px; opacity: 0.6; }
+    canvas { border-radius: 8px; box-shadow: 0 0 40px rgba(0,0,0,0.8); }
+    #contador { color: #f9e2af; margin-top: 14px; font-size: 1rem; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+  <h1>SIMULADOR DE PENALES FALLADOS</h1>
+  <canvas id="c" width="800" height="480"></canvas>
+  <div id="contador">Penales fallados: 0</div>
+
+<script>
+const canvas  = document.getElementById('c');
+const ctx     = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// ── Arco ──────────────────────────────────────────────────────────────────────
+const AX1 = 155, AX2 = 645, AY1 = 110, AY2 = 310;
+const SUELO = 310, PX = 400, PY = 390;
+
+// ── Estado ────────────────────────────────────────────────────────────────────
+let fase = 'patear', t = 0, direccion = 1, tipoFallo = 'afuera';
+let bx = PX, by = PY, spin = 0;
+let axArq = 400, ayArq = 215;
+let contador = 0, paso = 0;
+
+const FALLOS = ['afuera', 'palo', 'arriba'];
+const MENSAJES = { afuera: '¡AFUERA!', palo: '¡AL PALO!', arriba: '¡POR ARRIBA!' };
+
+// ── Dibujo campo ──────────────────────────────────────────────────────────────
+function dibujarCampo() {
+  // Franjas de césped
+  for (let x = 0; x < W; x += 55) {
+    ctx.fillStyle = (Math.floor(x / 55) % 2 === 0) ? '#2d8a2d' : '#278227';
+    ctx.fillRect(x, 0, 55, H);
+  }
+
+  // Red
+  ctx.strokeStyle = 'rgba(180,180,180,0.35)';
+  ctx.lineWidth = 1;
+  for (let x = AX1; x <= AX2; x += 20) {
+    ctx.beginPath(); ctx.moveTo(x, AY1); ctx.lineTo(x, AY2); ctx.stroke();
+  }
+  for (let y = AY1; y <= AY2; y += 20) {
+    ctx.beginPath(); ctx.moveTo(AX1, y); ctx.lineTo(AX2, y); ctx.stroke();
+  }
+
+  // Postes
+  ctx.fillStyle = '#ddd';
+  ctx.fillRect(AX1 - 6, AY1, 8, AY2 - AY1);
+  ctx.fillRect(AX2 - 2, AY1, 8, AY2 - AY1);
+  ctx.fillRect(AX1 - 6, AY1 - 6, AX2 - AX1 + 14, 8);
+
+  // Línea de fondo
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, SUELO); ctx.lineTo(W, SUELO); ctx.stroke();
+
+  // Área
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.strokeRect(220, SUELO, 360, 80);
+
+  // Punto de penalti
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(PX, PY, 5, 0, Math.PI * 2); ctx.fill();
+
+  // Semicírculo
+  ctx.beginPath();
+  ctx.arc(PX, PY - 5, 68, Math.PI, 2 * Math.PI);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+}
+
+function dibujarJugador(x, y, corriendo, piernaSuelta) {
+  const ang = corriendo ? Math.sin(paso * 0.4) * 25 : (piernaSuelta ? 35 : 0);
+
+  // Sombra
+  ctx.fillStyle = 'rgba(0,60,0,0.5)';
+  ctx.beginPath(); ctx.ellipse(x, y + 2, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Piernas
+  const lx1 = x + Math.sin((ang) * Math.PI / 180) * 24;
+  const ly1 = y + Math.cos((ang) * Math.PI / 180) * 24;
+  const lx2 = x + Math.sin((-ang) * Math.PI / 180) * 24;
+  const ly2 = y + Math.cos((-ang) * Math.PI / 180) * 24;
+
+  ctx.lineWidth = 8; ctx.lineCap = 'round';
+  ctx.strokeStyle = '#fff';
+  ctx.beginPath(); ctx.moveTo(x, y - 8); ctx.lineTo(lx1, ly1); ctx.stroke();
+  ctx.strokeStyle = '#aaa';
+  ctx.beginPath(); ctx.moveTo(x, y - 8); ctx.lineTo(lx2, ly2); ctx.stroke();
+
+  // Cuerpo (camiseta azul)
+  ctx.fillStyle = '#1a6fc4';
+  ctx.fillRect(x - 13, y - 42, 26, 34);
+
+  // Número 10
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Segoe UI';
+  ctx.textAlign = 'center'; ctx.fillText('10', x, y - 20);
+
+  // Cabeza
+  ctx.fillStyle = '#f5c5a3';
+  ctx.beginPath(); ctx.arc(x, y - 55, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#c8956a'; ctx.lineWidth = 2; ctx.stroke();
+
+  // Cabello
+  ctx.fillStyle = '#3d2b1f';
+  ctx.beginPath(); ctx.arc(x, y - 62, 9, Math.PI, 2 * Math.PI); ctx.fill();
+
+  // Brazos
+  ctx.strokeStyle = '#f5c5a3'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(x - 13, y - 34); ctx.lineTo(x - 26, y - 18); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 13, y - 34); ctx.lineTo(x + 26, y - 18); ctx.stroke();
+}
+
+function dibujarArquero(x, y, saltando) {
+  const ext = saltando ? 42 : 30;
+
+  // Sombra
+  ctx.fillStyle = 'rgba(0,60,0,0.5)';
+  ctx.beginPath(); ctx.ellipse(x, y + 46, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Piernas
+  ctx.lineWidth = 8; ctx.lineCap = 'round';
+  ctx.strokeStyle = '#fff';
+  ctx.beginPath(); ctx.moveTo(x - 5, y + 24); ctx.lineTo(x - 12, y + 46); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 5, y + 24); ctx.lineTo(x + 12, y + 46); ctx.stroke();
+
+  // Cuerpo
+  ctx.fillStyle = '#dc3545';
+  ctx.fillRect(x - 14, y, 28, 26);
+
+  // Cabeza
+  ctx.fillStyle = '#f5c5a3';
+  ctx.beginPath(); ctx.arc(x, y - 14, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#dc3545'; ctx.lineWidth = 2; ctx.stroke();
+
+  // Brazos
+  ctx.strokeStyle = '#f5c5a3'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(x - 14, y + 10); ctx.lineTo(x - ext, y - 6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 14, y + 10); ctx.lineTo(x + ext, y - 6); ctx.stroke();
+
+  // Guantes
+  ctx.fillStyle = '#f9e2af';
+  ctx.beginPath(); ctx.arc(x - ext, y - 6, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + ext, y - 6, 9, 0, Math.PI * 2); ctx.fill();
+}
+
+function dibujarBalon(x, y) {
+  // Sombra
+  const esc = (y - 100) / 300;
+  ctx.fillStyle = `rgba(0,60,0,${0.3 * esc})`;
+  ctx.beginPath(); ctx.ellipse(x, SUELO + 4, 15 * esc, 5 * esc, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Balón
+  ctx.fillStyle = '#f0f0f0';
+  ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.fill();
+
+  // Paneles negros rotando
+  ctx.fillStyle = '#222';
+  for (let i = 0; i < 5; i++) {
+    const a = spin + (i * Math.PI * 2 / 5);
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * 6, y + Math.sin(a) * 6, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.stroke();
+}
+
+// ── Loop ──────────────────────────────────────────────────────────────────────
+function loop() {
+  ctx.clearRect(0, 0, W, H);
+  dibujarCampo();
+
+  t += 1;
+  paso = (paso + 1) % 64;
+  spin += 0.12;
+
+  if (fase === 'patear') {
+    const prog = Math.min(t / 38, 1);
+    const jxA  = (PX - 95) + 95 * prog;
+
+    dibujarJugador(jxA, 425, true, false);
+    axArq = 400 + Math.round(38 * Math.sin(t * 0.05));
+    dibujarArquero(axArq, 212, false);
+    dibujarBalon(PX, PY);
+
+    if (prog >= 1) {
+      direccion  = Math.random() < 0.5 ? -1 : 1;
+      tipoFallo  = FALLOS[Math.floor(Math.random() * FALLOS.length)];
+      fase = 'vuelo'; t = 0;
+    }
+
+  } else if (fase === 'vuelo') {
+    const dur  = 42;
+    const prog = Math.min(t / dur, 1);
+
+    // Posición exacta de cada poste
+    const postoX = direccion === 1 ? AX2 : AX1;  // 645 o 155
+
+    if (tipoFallo === 'afuera') {
+      // Va claramente más allá del poste (80px fuera del marco)
+      const targetX = direccion === 1 ? AX2 + 90 : AX1 - 90;
+      bx = PX + (targetX - PX) * prog;
+      by = PY - 220 * Math.sin(Math.PI * prog) * 0.55;
+
+    } else if (tipoFallo === 'palo') {
+      // Viaja exactamente al poste, luego rebota hacia afuera
+      if (prog <= 0.8) {
+        const p = prog / 0.8;
+        bx = PX + (postoX - PX) * p;
+        by = PY - 250 * Math.sin(Math.PI * p * 0.9) * 0.52;
+      } else {
+        // Rebote: sale hacia afuera del marco
+        const p = (prog - 0.8) / 0.2;
+        bx = postoX + direccion * 55 * p;
+        by = (PY - 250 * Math.sin(Math.PI * 0.72)) + 60 * p;
+      }
+
+    } else {
+      // Por arriba: sube muy alto, pasa por encima del travesaño (AY1=110)
+      bx = PX + direccion * 100 * prog;
+      by = PY - 420 * Math.sin(Math.PI * prog * 0.6);
+    }
+
+    axArq = 400 + (-direccion) * 120 * prog;
+    ayArq = 212 - 45 * Math.sin(Math.PI * prog);
+
+    dibujarArquero(Math.round(axArq), Math.round(ayArq), true);
+    dibujarJugador(PX, 425, false, true);
+    dibujarBalon(bx, by);
+
+    if (prog >= 1) { fase = 'resultado'; t = 0; contador++; }
+
+  } else if (fase === 'resultado') {
+    dibujarJugador(PX, 425, false, true);
+    dibujarArquero(Math.round(axArq), Math.round(ayArq), true);
+
+    const txt  = MENSAJES[tipoFallo];
+    const pulso = 54 + Math.sin(t * 0.15) * 6;
+    ctx.font = `bold ${Math.round(pulso)}px Segoe UI`;
+    ctx.textAlign = 'center';
+    // Sombra
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillText(txt, W / 2 + 3, H / 2 - 48);
+    // Texto
+    ctx.fillStyle = '#e63946';
+    ctx.fillText(txt, W / 2, H / 2 - 50);
+
+    document.getElementById('contador').textContent = `Penales fallados: ${contador}`;
+
+    if (t > 95) { fase = 'patear'; t = 0; }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
